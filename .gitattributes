@@ -1,0 +1,1 @@
+ml/data/context/osm/osm_*.geojson filter=lfs diff=lfs merge=lfs -text
