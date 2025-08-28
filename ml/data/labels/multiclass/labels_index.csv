@@ -1,0 +1,15 @@
+chip_id,label_npy
+s2_0_0,data/labels/multiclass\s2_0_0_labels.npy
+s2_0_1,data/labels/multiclass\s2_0_1_labels.npy
+s2_0_2,data/labels/multiclass\s2_0_2_labels.npy
+s2_0_3,data/labels/multiclass\s2_0_3_labels.npy
+s2_0_4,data/labels/multiclass\s2_0_4_labels.npy
+s2_0_5,data/labels/multiclass\s2_0_5_labels.npy
+s2_0_6,data/labels/multiclass\s2_0_6_labels.npy
+s2_0_7,data/labels/multiclass\s2_0_7_labels.npy
+s2_1_2,data/labels/multiclass\s2_1_2_labels.npy
+s2_1_6,data/labels/multiclass\s2_1_6_labels.npy
+s2_1_8,data/labels/multiclass\s2_1_8_labels.npy
+s2_1_10,data/labels/multiclass\s2_1_10_labels.npy
+s2_2_1,data/labels/multiclass\s2_2_1_labels.npy
+s2_2_4,data/labels/multiclass\s2_2_4_labels.npy
