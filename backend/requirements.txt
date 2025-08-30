@@ -1,0 +1,10 @@
+fastapi[all]==0.112.2
+uvicorn[standard]==0.30.6
+pydantic==2.8.2
+SQLAlchemy==2.0.32
+psycopg[binary]==3.2.1
+geoalchemy2==0.15.2
+alembic==1.13.2
+redis==5.0.8
+loguru==0.7.2
+
