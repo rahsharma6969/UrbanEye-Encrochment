@@ -1,0 +1,16 @@
+FROM pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gdal-bin libgdal-dev libjpeg-dev libpng-dev libpq-dev \
+    build-essential curl git && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements.txt /app/requirements.txt
+# Skip torch install (already in base)
+RUN pip install -r requirements.txt
+
+COPY . /app
+ENV MPLCONFIGDIR=/tmp/mpl NUMBA_CACHE_DIR=/tmp/numba
+CMD ["bash", "-lc", "sleep infinity"]
+
