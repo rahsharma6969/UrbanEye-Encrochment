@@ -1,0 +1,15 @@
+services:
+  ml-dev:
+    build:
+      context: ./ml
+      dockerfile: Dockerfile.gpu   # switches to the CUDA/PyTorch image
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+

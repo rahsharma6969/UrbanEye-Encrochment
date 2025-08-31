@@ -127,3 +127,14 @@ if __name__ == "__main__":
 #   --epochs 20 ^
 #   --batch_size 8 ^
 #   --out_dir outputs/models_multi
+
+
+
+# python scripts/make_labels_from_context.py ^
+#   --parquet outputs/chips_index_s2.parquet ^
+#   --preds_dir outputs/preds ^
+#   --osm_buildings data/context/osm/osm_buildings.geojson ^
+#   --osm_roads data/context/osm/osm_roads.geojson ^
+#   --worldcover_tif data/context/worldcover.tif ^
+#   --out_dir data/labels/multiclass
+
