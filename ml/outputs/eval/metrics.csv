@@ -1,0 +1,6 @@
+class,IoU
+background,0.0
+building,0.012147887323943661
+road,0.016826411075612353
+vegetation,0.0
+water,0.0
