@@ -1,11 +1,20 @@
-import argparse, os, time, json, requests, geopandas as gpd, pandas as pd
-from shapely.geometry import box
-from pathlib import Path
 
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+
+# scripts/osm_fetch_overpass.py
+import argparse
+import requests
+import geopandas as gpd
+import pandas as pd
+from pathlib import Path
+import time
+import json
+
+# ✅ Use kumi.systems — but only for small AOIs
+OVERPASS_URL = "https://overpass.kumi.systems/api/interpreter"
 
 def load_aoi_union(aoi_dir: str) -> gpd.GeoDataFrame:
-    files = list(Path(aoi_dir).glob("*.geojson"))
+    aoi_dir = Path(aoi_dir)
+    files = list(aoi_dir.glob("*.geojson"))
     if not files:
         raise SystemExit(f"No AOI files in {aoi_dir}")
     gdfs = []
@@ -14,42 +23,61 @@ def load_aoi_union(aoi_dir: str) -> gpd.GeoDataFrame:
         g = g[g.geometry.notna()]
         if not g.empty:
             gdfs.append(g.to_crs("EPSG:4326"))
-    merged = pd.concat(gdfs, ignore_index=True).explode(index_parts=False, ignore_index=True)
+    if not gdfs:
+        raise SystemExit("No valid geometries in AOI files.")
+    merged = pd.concat(gdfs, ignore_index=True).explode(ignore_index=True)
     try:
         u = merged.geometry.union_all()
     except AttributeError:
         u = merged.geometry.unary_union
+    if not u.is_valid:
+        u = u.buffer(0)  # Fix invalid geometry
     return gpd.GeoDataFrame(geometry=[u], crs="EPSG:4326")
 
-def aoi_bbox(aoi_gdf: gpd.GeoDataFrame, expand_deg=0.001):
+def aoi_bbox(aoi_gdf: gpd.GeoDataFrame):
     minx, miny, maxx, maxy = aoi_gdf.total_bounds
-    return (miny - expand_deg, minx - expand_deg, maxy + expand_deg, maxx + expand_deg)  # (S,W,N,E)
+    return miny, minx, maxy, maxx  # S, W, N, E
 
-def overpass_query(bbox, q_body, max_tries=4, sleep_s=8):
-    # bbox format: (S,W,N,E)
-    q = f"[out:json][timeout:120];\n" + q_body.format(s=bbox[0], w=bbox[1], n=bbox[2], e=bbox[3]) + "\nout body; >; out skel qt;"
-    tries = 0
-    while True:
-        tries += 1
-        r = requests.post(OVERPASS_URL, data={"data": q}, timeout=180)
-        if r.status_code == 429 or (r.status_code == 400 and "rate_limited" in r.text.lower()):
-            if tries >= max_tries:
-                r.raise_for_status()
-            time.sleep(sleep_s * tries)
-            continue
-        r.raise_for_status()
-        return r.json()
+def overpass_query(bbox, query_body, timeout=60):
+    S, W, N, E = bbox
+    query = f"""
+    [out:json][timeout:{timeout}];
+    {query_body.format(s=S, w=W, n=N, e=E)}
+    out body; >; out skel qt;
+    """.strip()
+
+    print(f"📤 Sending query to {OVERPASS_URL}")
+    print(f"🔍 Query: {query[:200]}...")
+
+    for i in range(3):
+        try:
+            r = requests.post(OVERPASS_URL, data={"data": query}, timeout=timeout + 10)
+            if r.status_code == 200:
+                try:
+                    data = r.json()
+                    if "elements" in data:
+                        print(f"✅ Success! Got {len(data['elements'])} elements")
+                        return data
+                    else:
+                        print("❌ No 'elements' in response.")
+                        return {"elements": []}
+                except json.JSONDecodeError:
+                    print("❌ Response is not JSON:", r.text[:200])
+                    return {"elements": []}
+            else:
+                print(f"❌ HTTP {r.status_code}: {r.text[:200]}")
+        except requests.exceptions.RequestException as e:
+            print(f"⚠️ Request failed (attempt {i+1}/3): {e}")
+            if i == 2:
+                print("❌ Giving up after 3 attempts.")
+                return {"elements": []}
+            time.sleep(2)
+    return {"elements": []}
 
 def osmjson_to_gdf(osm_json) -> gpd.GeoDataFrame:
-    # Use geopandas' built-in helper if installed (since 0.14): gpd.read_file("OSMURL") not viable here.
-    # We'll convert via osmnx-like routine using nodes/ways/relations minimally for polygons/lines.
-    import networkx as nx  # only used to stitch ways quickly; if not available, fall back to simple method
     elements = osm_json.get("elements", [])
     nodes = {el["id"]: (el["lon"], el["lat"]) for el in elements if el["type"] == "node"}
     ways = [el for el in elements if el["type"] == "way"]
-    rels = [el for el in elements if el["type"] == "relation"]
-    # Build geometries from ways (LineString or Polygon if closed)
-    from shapely.geometry import LineString, Polygon
     records = []
     for w in ways:
         nds = w.get("nodes", [])
@@ -57,99 +85,75 @@ def osmjson_to_gdf(osm_json) -> gpd.GeoDataFrame:
         if len(coords) < 2:
             continue
         tags = w.get("tags", {})
-        if len(coords) >= 4 and coords[0] == coords[-1] and any(k in tags for k in ["area", "landuse", "natural", "water", "leisure", "building", "amenity"]):
-            geom = Polygon(coords)
+        if len(coords) >= 4 and coords[0] == coords[-1]:
+            try:
+                from shapely import Polygon
+                geom = Polygon(coords)
+            except:
+                continue
         else:
-            geom = LineString(coords)
-        rec = {"geometry": geom}
-        rec.update(tags)
-        records.append(rec)
-    gdf = gpd.GeoDataFrame(records, geometry="geometry", crs="EPSG:4326")
-    # Relations (multipolygons) are trickier; keep ways for now (good enough for roads/water/wetlands in most AOIs)
-    return gdf
+            try:
+                from shapely import LineString
+                geom = LineString(coords)
+            except:
+                continue
+        records.append({"geometry": geom, **tags})
+    return gpd.GeoDataFrame(records, crs="EPSG:4326")
 
-def main(a):
-    os.makedirs(a.out_dir, exist_ok=True)
-    aoi = load_aoi_union(a.aoi_dir)
-    bbox = aoi_bbox(aoi, expand_deg=a.expand_bbox_deg)
+def main(args):
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Queries (union of relevant features). Overpass bbox placeholder {s},{w},{n},{e}
-    q_roads = """
-    (
-      way["highway"]({s},{w},{n},{e});
-    );
-    """
+    aoi = load_aoi_union(args.aoi_dir)
+    bbox = aoi_bbox(aoi)
+    print(f"📍 AOI BBox (S,W,N,E): {bbox}")
+
     q_buildings = """
     (
       way["building"]({s},{w},{n},{e});
     );
     """
-    q_wetlands = """
+    q_roads = """
     (
-      way["natural"="wetland"]({s},{w},{n},{e});
-      way["wetland"="mangrove"]({s},{w},{n},{e});
-      way["natural"="wood"]({s},{w},{n},{e})["leaf_type"="mangrove"];
-      relation["natural"="wetland"]({s},{w},{n},{e});
-      relation["wetland"="mangrove"]({s},{w},{n},{e});
-    );
-    """
-    q_water = """
-    (
-      way["natural"="water"]({s},{w},{n},{e});
-      way["waterway"]({s},{w},{n},{e});
-      way["landuse"="reservoir"]({s},{w},{n},{e});
-      relation["natural"="water"]({s},{w},{n},{e});
-      relation["waterway"]({s},{w},{n},{e});
-    );
-    """
-    q_protected = """
-    (
-      way["boundary"="protected_area"]({s},{w},{n},{e});
-      relation["boundary"="protected_area"]({s},{w},{n},{e});
-      way["leisure"="nature_reserve"]({s},{w},{n},{e});
-      relation["leisure"="nature_reserve"]({s},{w},{n},{e});
+      way["highway"]({s},{w},{n},{e});
     );
     """
 
-    print("Fetching roads…")
-    roads_json = overpass_query(bbox, q_roads)
-    print("Fetching buildings…")
+    print("🔍 Fetching buildings...")
     bld_json = overpass_query(bbox, q_buildings)
-    print("Fetching wetlands/mangroves…")
-    wet_json = overpass_query(bbox, q_wetlands)
-    print("Fetching water bodies…")
-    water_json = overpass_query(bbox, q_water)
-    print("Fetching protected areas…")
-    prot_json = overpass_query(bbox, q_protected)
+    print("🔍 Fetching roads...")
+    road_json = overpass_query(bbox, q_roads)
 
-    roads = osmjson_to_gdf(roads_json)
-    blds  = osmjson_to_gdf(bld_json)
-    wets  = osmjson_to_gdf(wet_json)
-    water = osmjson_to_gdf(water_json)
-    prot  = osmjson_to_gdf(prot_json)
+    buildings = osmjson_to_gdf(bld_json)
+    roads = osmjson_to_gdf(road_json)
 
-    # Clip all to AOI
-    def clip(g):
-        if g.empty: return g
-        return g.to_crs("EPSG:4326").clip(aoi.to_crs("EPSG:4326").geometry.iloc[0])
+    def safe_clip(gdf):
+        if gdf.empty:
+            return gdf
+        gdf = gdf.copy()
+        gdf['geometry'] = gdf.buffer(0)  # Fix invalid
+        return gdf.clip(aoi)
 
-    roads = clip(roads); blds = clip(blds); wets = clip(wets); water = clip(water); prot = clip(prot)
+    buildings = safe_clip(buildings)
+    roads = safe_clip(roads)
 
-    # Save
-    roads.to_file(os.path.join(a.out_dir, "osm_roads.geojson"), driver="GeoJSON")
-    blds.to_file(os.path.join(a.out_dir, "osm_buildings.geojson"), driver="GeoJSON")
-    wets.to_file(os.path.join(a.out_dir, "osm_wetlands.geojson"), driver="GeoJSON")
-    water.to_file(os.path.join(a.out_dir, "osm_water.geojson"), driver="GeoJSON")
-    prot.to_file(os.path.join(a.out_dir, "osm_protected.geojson"), driver="GeoJSON")
+    buildings.to_file(out_dir / "osm_buildings.geojson", driver="GeoJSON")
+    roads.to_file(out_dir / "osm_roads.geojson", driver="GeoJSON")
 
-    print("Saved OSM layers to", a.out_dir)
-    for name, g in [("roads",roads),("buildings",blds),("wetlands",wets),("water",water),("protected",prot)]:
-        print(f"  {name}: {len(g)} features")
+    print(f"✅ Saved to {out_dir}")
+    print(f"  Buildings: {len(buildings)}")
+    print(f"  Roads: {len(roads)}")
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--aoi_dir", default="data/aoi")
-    ap.add_argument("--out_dir", default="data/context/osm")
-    ap.add_argument("--expand_bbox_deg", type=float, default=0.001)  # ~100m pad
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--aoi_dir", default="data/aoi")
+    parser.add_argument("--out_dir", default="data/context/osm")
+    args = parser.parse_args()
     main(args)
+    
+    
+'''
+    python scripts/osm_fetch_overpass.py ^
+  --aoi_dir data/aoi ^
+  --out_dir data/context/osm
+'''

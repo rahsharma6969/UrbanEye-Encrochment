@@ -1,5 +1,8 @@
 # src/stac/search_items_aws.py
-import argparse, json, yaml, sys
+import argparse
+import json
+import yaml
+import sys
 from pathlib import Path
 from datetime import datetime
 import requests
@@ -7,9 +10,10 @@ import geopandas as gpd
 import pandas as pd
 from shapely.geometry import mapping
 
+# ✅ Fixed URL (no trailing space)
 AWS_STAC = "https://earth-search.aws.element84.com/v1/search"
 
-def load_cfg(p): 
+def load_cfg(p):
     with open(p, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
@@ -25,7 +29,7 @@ def aoi_union(aoi_dir: Path):
             gdfs.append(g.to_crs("EPSG:4326"))
     if not gdfs:
         sys.exit("AOI files contain no valid geometries.")
-    merged = pd.concat(gdfs, ignore_index=True).explode(index_parts=False, ignore_index=True)
+    merged = pd.concat(gdfs, ignore_index=True).explode(ignore_index=True)
     try:
         u = merged.geometry.union_all()
     except AttributeError:
@@ -33,10 +37,7 @@ def aoi_union(aoi_dir: Path):
     return mapping(u)
 
 def search_aws(collections, dt_start, dt_end, intersects, cloud_lt=None, limit=200):
-    # Build legacy STAC 'query' for cloud cover (works on Earth Search)
-    query = None
-    if cloud_lt is not None:
-        query = {"eo:cloud_cover": {"lt": cloud_lt}}
+    query = {"eo:cloud_cover": {"lt": cloud_lt}} if cloud_lt is not None else None
 
     body = {
         "collections": collections,
@@ -53,12 +54,14 @@ def search_aws(collections, dt_start, dt_end, intersects, cloud_lt=None, limit=2
         r.raise_for_status()
         data = r.json()
         feats = data.get("features", [])
+
+        # ✅ Accept all scenes — no .tif filtering
         for it in feats:
             items.append({
                 "collection": it.get("collection"),
-                "item": it,  # keep full STAC item for your tilers
+                "item": it,
             })
-        # follow 'next' link if present
+
         next_link = None
         for L in data.get("links", []):
             if L.get("rel") == "next" and L.get("method", "POST") == "POST":
@@ -66,31 +69,43 @@ def search_aws(collections, dt_start, dt_end, intersects, cloud_lt=None, limit=2
                 break
         if not next_link:
             break
-        # Earth Search gives the next POST body in link["body"]
         body = next_link.get("body", body)
     return items
 
-def main(config, start, end, collections, out):
+
+def main(config, start, end, collections, out, cloud_lt=None):
     cfg = load_cfg(config)
     aoi_dir = Path(cfg["paths"]["aoi_dir"])
     geom = aoi_union(aoi_dir)
 
-    cloud_lt = None
-    # Optional: read a cloud filter from your YAML if present (e.g., stac.cloud_lt: 60)
-    if "stac" in cfg and isinstance(cfg["stac"], dict):
-        cloud_lt = cfg["stac"].get("cloud_lt", None)
+    if cloud_lt is None:
+        if "stac" in cfg and isinstance(cfg["stac"], dict):
+            cloud_lt = cfg["stac"].get("cloud_lt", None)
 
-    items = search_aws(collections, start, end, geom, cloud_lt=cloud_lt, limit=200)
+    items = search_aws(collections, start, end, geom, cloud_lt=cloud_lt)
     Path(out).parent.mkdir(parents=True, exist_ok=True)
-    Path(out).write_text(json.dumps(items))
-    print(f"Wrote {len(items)} items -> {out}")
+    Path(out).write_text(json.dumps(items, indent=2))
+    print(f"✅ Wrote {len(items)} STAC items → {out}")
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--config", required=True)
-    ap.add_argument("--start", required=True)       # YYYY-MM-DD
-    ap.add_argument("--end", required=True)
-    ap.add_argument("--collections", nargs="+", required=True)
-    ap.add_argument("--out", required=True)
+    ap = argparse.ArgumentParser(description="Search AWS Earth Search STAC API for Sentinel-2")
+    ap.add_argument("--config", required=True, help="Path to YAML config")
+    ap.add_argument("--start", required=True, help="Start date (YYYY-MM-DD)")
+    ap.add_argument("--end", required=True, help="End date (YYYY-MM-DD)")
+    ap.add_argument("--collections", nargs="+", required=True, help="STAC collections")
+    ap.add_argument("--out", required=True, help="Output JSON file")
+    ap.add_argument("--cloud_lt", type=int, help="Max cloud cover % (e.g., 30)")
     a = ap.parse_args()
-    main(a.config, a.start, a.end, a.collections, a.out)
+    main(a.config, a.start, a.end, a.collections, a.out, cloud_lt=a.cloud_lt)
+    
+'''  
+python -m src.stac.search_items_aws ^
+  --config configs/config.yaml ^
+  --start 2022-01-01 ^
+  --end 2023-12-31 ^
+  --collections sentinel-2-l2a ^
+  --out outputs/stac_items_mumbai.json ^
+  --cloud_lt 30
+
+  
+  '''

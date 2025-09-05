@@ -10,7 +10,7 @@ class DoubleConv(nn.Module):
     def forward(self, x): return self.net(x)
 
 class ChangeUNetMulti(nn.Module):
-    def __init__(self, in_ch=8, n_classes=5):  # 4 bands * 2 times = 8; classes: {0..4}, we will ignore 255 in loss
+    def __init__(self, in_ch=8, n_classes=3):  # 4 bands * 2 times = 8; classes: {0..4}, we will ignore 255 in loss
         super().__init__()
         ch = [64,128,256]
         self.enc1 = DoubleConv(in_ch, ch[0])
