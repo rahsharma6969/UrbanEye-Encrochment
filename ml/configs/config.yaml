@@ -24,4 +24,4 @@ model:
   lr: 0.0003
   batch_size: 8
   epochs: 30
-  device: cpu          # or cpu
+  device: auto        # or cpu

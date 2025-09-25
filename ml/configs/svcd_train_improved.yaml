@@ -1,0 +1,127 @@
+# data:
+#   type: SVCD_Dataset
+#   img_dir: data/chips_256
+#   ann_dir: data/chips_256
+#   sub_dir_1: A
+#   sub_dir_2: B
+#   img_suffix: .png
+#   seg_map_suffix: .png
+
+# model:
+#   encoder: resnet34
+#   encoder_weights: imagenet
+#   in_channels: 6
+#   num_classes: 2
+  
+#   lr: 2e-4
+#   batch_size: 4
+#   epochs: 50
+#   weight_decay: 5e-5
+  
+#   use_focal: true
+#   focal_alpha: [0.1, 50.0]     # 👈 Match real imbalance (was 5.0)
+#   focal_gamma: 3.0
+  
+#   oversample_positive: true
+#   oversample_factor: 20.0
+  
+#   ce_weight: 0.5
+#   dice_weight: 0.3             # 👈 Reduced for stability (was 0.5)
+  
+#   default_threshold: 0.1       # 👈 Lowered for inference (was 0.3)
+#   vis_threshold: 0.1
+#   val_fraction: 0.15
+  
+#   amp: true
+#   max_class_weight: 100.0      # 👈 Match computed weights (was 20.0)
+  
+#   monitor_metric: "f1"
+
+# paths:
+#   outputs_dir: outputs
+#   checkpoints_dir: outputs/checkpoints
+#   logs_dir: outputs/logs
+
+# scheduler:
+#   type: reduce
+#   patience: 8
+#   factor: 0.5
+#   min_lr: 1e-6
+# configs/svcd_train_improved_checked.yaml
+
+# TOP-LEVEL data index (your training code expects a direct train_index key)
+train_index: data/LEVIR_CD/chips_256/index.parquet
+val_index: data/LEVIR_CD/chips_256/index.parquet
+test_index: data/LEVIR_CD/chips_256/index.parquet
+
+data:
+  type: SVCD_Dataset
+  img_dir: data/chips_256
+  ann_dir: data/chips_256
+  sub_dir_1: A
+  sub_dir_2: B
+  img_suffix: .png
+  seg_map_suffix: .png
+
+# Model
+encoder: resnet34
+in_channels: 6           # t0 (3 ch) + t1 (3 ch)
+classes: 2               # renamed from num_classes -> classes
+
+# Training
+batch_size: 4
+epochs: 50
+lr: 0.0002
+weight_decay: 5e-5
+
+# Data augmentation
+augmentations: null
+
+# Loss and class balancing
+use_focal: true
+# focal_alpha should be a scalar or sensible per-class probs (sum-to-1). Example below:
+focal_alpha: 0.25       # typical default; or [0.75, 0.25] if you want to weight background higher
+focal_gamma: 2.0        # often 2.0 or 1.0 — 3.0 is steep, 2.0 is common
+ce_weight: 0.5
+dice_weight: 0.5
+ignore_index: 255       # only if your masks actually use 255 as "ignore". If masks are 0/1, set to None or remove.
+
+# Sampling
+oversample_positive: true
+oversample_factor: 5.0  # reduced from 20.0 — tune 2..10 depending on imbalance
+
+# Optimizer & scheduler (shape matches the training code that expects scheduler.name)
+optimizer:
+  type: adamw
+  weight_decay: 5e-5
+
+scheduler:
+  name: ReduceLROnPlateau
+  params:
+    mode: min
+    patience: 8
+    factor: 0.5
+    min_lr: 1e-6
+    verbose: true
+
+# Metrics & monitoring
+monitor_metric: "f1"
+val_fraction: 0.15
+test_fraction: 0.15
+
+device: auto
+amp: true
+
+# Output paths
+paths:
+  outputs_dir: outputs
+  checkpoints_dir: outputs/checkpoints
+  logs_dir: outputs/logs
+
+# Visual thresholds
+default_threshold: 0.5
+vis_threshold: 0.5
+vis_min_area: 20
+
+# Evaluation
+eval_batch_size: 4

@@ -1,0 +1,20 @@
+augmentations: null
+batch_size: 4
+classes: 2
+criterion: cross_entropy
+device: auto
+encoder: resnet34
+epochs: 50
+ignore_index: 255
+in_channels: 6
+lr: 0.0002
+optimizer:
+  type: adam
+  weight_decay: 5.0e-05
+scheduler:
+  factor: 0.1
+  patience: 5
+  type: ReduceLROnPlateau
+train_index: data/LEVIR_CD/chips_256/index_fixed.parquet
+val_index: data/LEVIR_CD/chips_256/index_fixed.parquet
+weight_decay: 5.0e-05

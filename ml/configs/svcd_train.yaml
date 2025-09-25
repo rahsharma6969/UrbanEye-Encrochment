@@ -1,0 +1,51 @@
+# === MODEL ARCHITECTURE ===
+model:
+  encoder: resnet34
+  in_channels: 6
+  classes: 2
+  encoder_weights: imagenet
+
+# === TRAINING PARAMETERS ===
+batch_size: 4
+epochs: 50
+lr: 0.0002
+weight_decay: 0.00005
+
+# === DATA LOADING ===
+train_index: data/LEVIR_CD/chips_256/index_fixed.parquet
+val_index: data/LEVIR_CD/chips_256/index_fixed.parquet
+
+# === LOSS FUNCTION ===
+criterion: focal_dice_hybrid
+focal_alpha: [0.1, 50.0]   # Background weight, Change weight
+focal_gamma: 3.0           # Focus on hard examples
+ce_weight: 0.5             # Weight of FocalLoss in hybrid
+dice_weight: 0.5           # Weight of DiceLoss in hybrid
+ignore_index: 255          # For fallback only
+
+# === SAMPLING STRATEGY ===
+oversample_positive: true
+oversample_factor: 20.0
+
+# === OPTIMIZER & SCHEDULER ===
+scheduler:
+  name: reduce_on_plateau
+  params:
+    mode: min
+    patience: 8
+    factor: 0.5
+    min_lr: 1e-6
+
+# === DEVICE & AMP ===
+device: auto
+amp: false
+
+# === SEED ===
+seed: 42
+
+# === OUTPUT PATHS ===
+output_dir: outputs
+save_interval: 5
+
+# === METRICS ===
+monitor_metric: "f1"

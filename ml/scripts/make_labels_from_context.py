@@ -42,7 +42,8 @@ def process_chip(args):
     crs = r["crs"]
     transform = open_ref_window_transform(xmin, ymin, xmax, ymax, w, h, crs)
 
-    chip_poly = gpd.GeoSeries([box(xmin, ymin, xmax, ymax)], crs=crs).iloc[0]
+    # Simplified chip polygon
+    chip_poly = box(xmin, ymin, xmax, ymax)
     lbl = np.full((h, w), CLASSES["IGNORE"], dtype=np.uint8)
 
     # buildings
@@ -61,16 +62,24 @@ def process_chip(args):
 
     # vegetation / water (if worldcover available)
     if wc is not None:
-        wc_win = wc.read(1, window=rasterio.windows.from_bounds(xmin, ymin, xmax, ymax, wc.transform), out_shape=(h, w))
-        veg_mask = np.isin(wc_win, [10, 20, 30])
-        water_mask = np.isin(wc_win, [80, 90, 95])
-        change_mask = np.ones_like(wc_win, dtype=bool)  # dummy placeholder (since preds_dir skipped here)
-        lbl[(lbl == CLASSES["IGNORE"]) & change_mask & veg_mask] = CLASSES["OTHER"]
-        lbl[(lbl == CLASSES["IGNORE"]) & change_mask & water_mask] = CLASSES["OTHER"]
+        try:
+            wc_win = wc.read(
+                1,
+                window=rasterio.windows.from_bounds(xmin, ymin, xmax, ymax, wc.transform),
+                out_shape=(h, w),
+                boundless=True,  # allows reading outside bounds
+                fill_value=0  # default class
+            )
+            veg_mask = np.isin(wc_win, [10, 20, 30])  # Trees, Shrub, Grass
+            water_mask = np.isin(wc_win, [80, 90, 95])  # Water bodies
+            lbl[(lbl == CLASSES["IGNORE"]) & (veg_mask | water_mask)] = CLASSES["OTHER"]
+        except Exception as e:
+            print(f"⚠️ WorldCover read failed for chip {r['chip_id']}: {e}")
 
-    # force resize if not expected size
-    if (h, w) != (64, 64) and (h, w) != (256, 256):
-        lbl = resize(lbl, (64, 64), order=0, preserve_range=True, anti_aliasing=False).astype(np.uint8)
+    # Always resize to target (e.g., 64x64) for consistency
+    TARGET_SIZE = (64, 64)
+    if lbl.shape != TARGET_SIZE:
+        lbl = resize(lbl, TARGET_SIZE, order=0, preserve_range=True, anti_aliasing=False).astype(np.uint8)
 
     # save label
     chip_id = r["chip_id"]
@@ -78,7 +87,6 @@ def process_chip(args):
     np.save(out_npy, lbl)
 
     return {"chip_id": chip_id, "label_npy": out_npy}
-
 
 def main(a):
     os.makedirs(a.out_dir, exist_ok=True)

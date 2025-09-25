@@ -1,156 +1,115 @@
-# ml/scripts/evaluate.py
-
-import argparse, os, numpy as np, torch
+\
+# ml/scripts/evaluate_test.py
+import torch
+import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from sklearn.metrics import confusion_matrix, classification_report, jaccard_score, accuracy_score
-from torch.utils.data import DataLoader, Dataset
-import seaborn as sns
-from skimage.transform import resize
+from pathlib import Path
+from tqdm import tqdm
+from src.dataset.change_dataset import ChangeDataset
+from torch.utils.data import DataLoader
+from src.models.unet import UNet
+import yaml
 
-IGNORE_INDEX = 255
-CLASSES = ["road", "building", "other"]  # our 3 classes
-LABELS = [0, 1, 2]
+CONF = Path("configs/svcd_train.yaml")
+CKPT = Path("outputs/checkpoints/latest.pth")  # adjust if different
 
-# === Dataset Loader ===
-class LabeledChips(Dataset):
-    def __init__(self, parquet, labels_dir, band_order=(0,1,2,3)):
-        self.df = pd.read_parquet(parquet).reset_index(drop=True)
-        self.labels_dir = labels_dir
-        self.band_order = band_order
+def load_cfg(p):
+    import yaml
+    return yaml.safe_load(open(p,'r'))
 
-        # only keep chips with labels
-        self.df = self.df[self.df["chip_id"].apply(
-            lambda cid: os.path.exists(os.path.join(labels_dir, f"{cid}_label.npy"))
-        )]
+cfg = load_cfg(CONF)
+device = torch.device("cuda" if torch.cuda.is_available() and cfg['model'].get('device','auto')!='cpu' else "cpu")
+print("Eval device:", device)
 
-    def __len__(self): return len(self.df)
+# read index and prepare test dataloader
+idx = pd.read_parquet("data/chips_256/npy/index.parquet")
+test_df = idx[idx.split=='test'].reset_index(drop=True)
+if test_df.empty:
+    raise SystemExit("No test data in index.parquet (split='test')")
 
-    def __getitem__(self, idx):
-        r = self.df.iloc[idx]
-        chip_id = r["chip_id"]
+ds = ChangeDataset(test_df)
+dl = DataLoader(ds, batch_size=cfg['model'].get('batch_size',4), shuffle=False, num_workers=2)
 
-        # Load chips
-        t0 = np.load(r["t0_npy"]).astype("float32")
-        t1 = np.load(r["t1_npy"]).astype("float32")
+# build model
+in_ch = int(cfg['model'].get('in_channels',6))
+base_ch = int(cfg['model'].get('base_channels',32))
+num_classes = int(cfg['model'].get('num_classes',255))
 
-        if t0.ndim == 3: t0 = np.transpose(t0, (2, 0, 1))  # HWC -> CHW
-        if t1.ndim == 3: t1 = np.transpose(t1, (2, 0, 1))
-
-        # Band selection
-        t0 = t0[list(self.band_order)]
-        t1 = t1[list(self.band_order)]
-
-        def norm(x):
-            x = np.nan_to_num(x, nan=0.0)
-            mx = np.percentile(x, 99)
-            return (x / max(mx, 1e-6)).clip(0, 1)
-
-        y = np.load(os.path.join(self.labels_dir, f"{chip_id}_label.npy")).astype("int64")
-
-        return torch.tensor(norm(t0)), torch.tensor(norm(t1)), torch.tensor(y), chip_id
-
-# === Evaluation Function ===
-def evaluate(args):
-    from src.models.change_unet_multi import ChangeUNetMulti
-
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Using device: {device}")
-
-    ds = LabeledChips(args.parquet, args.labels_dir)
-    if len(ds) == 0:
-        raise ValueError(f"No labeled chips found in {args.labels_dir}")
-
-    dl = DataLoader(ds, batch_size=1, shuffle=False)
-
-    # load model (3 classes now)
-    model = ChangeUNetMulti(in_ch=8, n_classes=3).to(device)
-    ckpt = torch.load(args.weights, map_location=device)
-    model.load_state_dict(ckpt.get("model_state_dict", ckpt))
-    model.eval()
-
-    all_preds, all_labels = [], []
-
+# try to build with same logic as training (constructor may differ)
+try:
+    model = UNet(in_ch=in_ch, base=base_ch, out_ch=num_classes)
+except TypeError:
+    model = UNet(in_ch=in_ch, base=base_ch)
+    # wrap (simple 1x1) if needed
+    import torch.nn as nn
     with torch.no_grad():
-        for t0, t1, y, chip_id in dl:
-            t0, t1, y = t0.to(device), t1.to(device), y.to(device)
+        dummy = torch.zeros(1, in_ch, 256, 256)
+        out = model(dummy)
+        if isinstance(out, dict):
+            out = list(out.values())[0]
+        base_out_ch = out.shape[1]
+    class Wrap(nn.Module):
+        def __init__(self, base, base_out_ch, out_ch):
+            super().__init__()
+            self.base = base
+            self.head = nn.Conv2d(base_out_ch, out_ch, 1)
+        def forward(self,x):
+            y = self.base(x)
+            if isinstance(y, dict):
+                y = y.get('out', list(y.values())[0])
+            return self.head(y)
+    model = Wrap(model, base_out_ch, num_classes)
 
-            logits = model(t0, t1)
-            pred = torch.argmax(torch.softmax(logits, dim=1), dim=1).squeeze().cpu().numpy()
-            label = y.squeeze().cpu().numpy()
+model = model.to(device)
+ckpt = torch.load(CKPT, map_location=device)
+if 'model_state' in ckpt:
+    model.load_state_dict(ckpt['model_state'])
+else:
+    model.load_state_dict(ckpt)
 
-            if pred.shape != label.shape:
-                label = resize(label, pred.shape, order=0,
-                               preserve_range=True, anti_aliasing=False).astype(np.int64)
+model.eval()
 
-            # mask ignore pixels
-            mask = (label != IGNORE_INDEX)
-            all_preds.extend(pred[mask].flatten())
-            all_labels.extend(label[mask].flatten())
+# metrics: per-class intersection & union
+intersection = np.zeros(num_classes, dtype=np.float64)
+union = np.zeros(num_classes, dtype=np.float64)
+present = np.zeros(num_classes, dtype=np.int64)  # counts where class present (optional)
 
-    # === Metrics ===
-    print("\nClassification Report:")
-    print(classification_report(
-        all_labels, all_preds,
-        labels=LABELS,
-        target_names=CLASSES,
-        digits=3,
-        zero_division=0
-    ))
+with torch.no_grad():
+    for xb, yb in tqdm(dl, desc="Eval"):
+        xb = xb.to(device).float()
+        yb = yb.to(device).long()  # shape (N,H,W)
+        logits = model(xb)
+        if isinstance(logits, dict):
+            logits = logits.get('out', list(logits.values())[0])
+        preds = logits.argmax(1)  # (N,H,W)
+        preds_np = preds.cpu().numpy().astype(np.int32)
+        y_np = yb.cpu().numpy().astype(np.int32)
+        # compute per-class intersection/union, ignore label 255
+        for c in range(num_classes):
+            if c == 255:  # skip if 255 used as ignore; num_classes should exclude 255, but keep guard
+                continue
+            pred_c = (preds_np == c)
+            gt_c = (y_np == c)
+            inter = np.logical_and(pred_c, gt_c).sum()
+            uni = np.logical_or(pred_c, gt_c).sum()
+            intersection[c] += inter
+            union[c] += uni
+            present[c] += gt_c.sum()
 
-    acc = accuracy_score(all_labels, all_preds)
-    print(f"\nOverall Accuracy: {acc:.3f}")
+# compute IoU
+eps = 1e-6
+ious = []
+for c in range(num_classes):
+    if union[c] > 0:
+        iou = intersection[c] / (union[c] + eps)
+        ious.append(iou)
+    else:
+        ious.append(np.nan)
 
-    cm = confusion_matrix(all_labels, all_preds, labels=LABELS)
-    plt.figure(figsize=(6, 5))
-    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
-                xticklabels=CLASSES, yticklabels=CLASSES)
-    plt.xlabel("Predicted")
-    plt.ylabel("True")
-    plt.title("Confusion Matrix")
-    os.makedirs(args.out_dir, exist_ok=True)
-    plt.savefig(os.path.join(args.out_dir, "confusion_matrix.png"))
-    plt.close()
-
-    iou = jaccard_score(all_labels, all_preds, average=None, labels=LABELS)
-    for i, cls in enumerate(CLASSES):
-        print(f"IoU for {cls}: {iou[i]:.3f}")
-    print(f"Mean IoU: {np.nanmean(iou):.3f}")
-
-    pd.DataFrame({"class": CLASSES, "IoU": iou}).to_csv(
-        os.path.join(args.out_dir, "metrics.csv"), index=False
-    )
-    print(f"\n✅ Saved metrics → {args.out_dir}/metrics.csv")
-
-# === CLI ===
-if __name__ == "__main__":
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--parquet", default="outputs/chips_index_s2.parquet")
-    ap.add_argument("--labels_dir", default="data/labels/multiclass")
-    ap.add_argument("--weights", default="outputs/models_multi/change_unet_multi_best.pth")
-    ap.add_argument("--out_dir", default="outputs/eval")
-    args = ap.parse_args()
-    evaluate(args)
-
-
-
-    
-    
-    
-    
-
-
-
-
-
-# python -m scripts.evaluate_model ^
-#   --parquet outputs/chips_index_s2.parquet ^
-#   --labels_dir data/labels/multiclass_4class ^
-#   --weights outputs/models_multi/change_unet_multi_best.pth ^
-#   --out_dir outputs/eval
-
-# python -m scripts.evaluate_model ^
-#   --parquet outputs/chips_index_s2.parquet ^
-#   --labels_dir data/labels/multiclass_4class ^
-#   --weights outputs/models_multi/change_unet_multi_best.pth ^
-#   --out_dir outputs/eval
+# report
+mean_iou = np.nanmean(ious)
+print(f"\nMean IoU over {num_classes} classes (ignoring empty classes): {mean_iou:.4f}")
+# print top/k classes by IoU
+for c in range(num_classes):
+    if not np.isnan(ious[c]):
+        print(f"Class {c:3d}: IoU={ious[c]:.4f}  present_pixels={present[c]}")
