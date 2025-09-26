@@ -262,4 +262,14 @@ if __name__ == "__main__":
   --threshold 0.35 ^
   --min_area 100 ^
   --device cpu
+  
+  
+  
+  python -m scripts.apply_threshold_postprocess_eval ^
+  --config configs/svcd_train.yaml ^
+  --index data\LEVIR_CD\chips_256\index.parquet ^
+  --ckpt outputs\checkpoints\best.pth ^
+  --threshold 0.3 ^
+  --min_area 20 ^
+  --device cpu
   '''
