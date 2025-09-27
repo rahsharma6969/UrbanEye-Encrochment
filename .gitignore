@@ -62,3 +62,5 @@ Thumbs.db
 ml/outputs/alerts_restricted/alerts.csv
 ml/data/context/osm/osm_roads.geojson
 ml/data/context/osm/osm_buildings.geojson
+ml/data/LEVIR_CD
+ml/data/SVCD
