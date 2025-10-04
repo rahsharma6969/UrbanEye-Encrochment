@@ -17,6 +17,7 @@ rioxarray>=0.15.5
 pystac-client>=0.7.7
 planetary-computer>=1.0.0
 sentinelsat>=1.1.0
+sentinelhub>=3.10.0
 
 # Image processing
 Pillow>=8.0.0

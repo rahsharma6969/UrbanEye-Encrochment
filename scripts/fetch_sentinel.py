@@ -1,194 +1,194 @@
 # ml/scripts/fetch_sentinel.py
 """
-Fetch Sentinel-2 images from Copernicus Data Space Ecosystem
-✅ Updated for new Copernicus authentication
+Fetch Sentinel-2 images - CLOUD-FREE VERSION
 """
+
 import os
 from pathlib import Path
 from datetime import datetime, timedelta
 import numpy as np
 from sentinelhub import (
-    SHConfig, 
-    BBox, 
-    CRS, 
+    SHConfig,
+    BBox,
+    CRS,
     DataCollection,
     SentinelHubRequest,
-    MimeType
+    MimeType,
+    bbox_to_dimensions
 )
 from dotenv import load_dotenv
+import sys
+sys.path.append(str(Path(__file__).parent.parent))
+from src.preprocess.enhance_satellite import enhance_for_change_detection
+
 
 def init_sentinel_config():
-    """Initialize and validate Sentinel Hub configuration"""
+    """Initialize Sentinel Hub configuration"""
     config = SHConfig()
-    
-    # Load environment variables
     env_path = Path(__file__).parent.parent / ".env"
     if not env_path.exists():
         raise ValueError(f"❌ .env file not found at {env_path}")
-    
     load_dotenv(env_path)
     
-    # Get credentials
     config.sh_client_id = os.getenv('SH_CLIENT_ID', '').strip()
     config.sh_client_secret = os.getenv('SH_CLIENT_SECRET', '').strip()
-    config.instance_id = os.getenv('SH_INSTANCE_ID', '').strip()
     
-    # Validate credentials
-    if not all([config.sh_client_id, config.sh_client_secret, config.instance_id]):
-        raise ValueError("❌ Missing required environment variables in .env file")
+    if not all([config.sh_client_id, config.sh_client_secret]):
+        raise ValueError("❌ Missing Sentinel Hub credentials!")
     
+    print("✅ Sentinel Hub config loaded")
     return config
 
-def fetch_sentinel_image(aoi, date, output_path):
-    """Fetch Sentinel-2 image for given AOI and date"""
+
+def fetch_sentinel_image(aoi, date, output_path=None, enhance=True):
+    """
+    Fetch cloud-free Sentinel-2 image
+    """
     try:
-        # Initialize configuration
         config = init_sentinel_config()
-        
-        # Initial time range
-        target_date = datetime.strptime(date, "%Y-%m-%d")
-        time_range = (
-            target_date - timedelta(days=3),
-            target_date + timedelta(days=3)
-        )
-        
-        print(f"   🔍 Searching: {time_range[0].strftime('%Y-%m-%d')} to {time_range[1].strftime('%Y-%m-%d')}")
-        print("   📡 Requesting data from Copernicus...")
-        
-        # Create bounding box
         bbox = BBox(bbox=aoi, crs=CRS.WGS84)
         
-        def create_request(time_interval):
-            return SentinelHubRequest(
-                evalscript="""
-                    //VERSION=3
-                    function setup() {
-                        return {
-                            input: ["B02", "B03", "B04"],
-                            output: { 
-                                bands: 3,
-                                sampleType: "UINT8"
-                            }
-                        };
-                    }
-                    
-                    function evaluatePixel(sample) {
-                        let gain = 3.5;
-                        let rgb = [sample.B04, sample.B03, sample.B02];
-                        return rgb.map(v => Math.min(255, v * gain * 255));
-                    }
-                """,
-                input_data=[
-                    SentinelHubRequest.input_data(
-                        data_collection=DataCollection.SENTINEL2_L2A,
-                        time_interval=time_interval,
-                        mosaicking_order='leastCC'
-                    )
-                ],
-                responses=[
-                    SentinelHubRequest.output_response("default", MimeType.PNG)
-                ],
-                bbox=bbox,
-                size=(1024, 1024),
-                config=config
-            )
+        # Calculate proper image size
+        size = bbox_to_dimensions(bbox, resolution=10)
+        print(f"📐 Image size: {size}")
         
-        # Try with initial time range
-        request = create_request(time_range)
-        img_list = request.get_data()
+        target_date = datetime.strptime(date, "%Y-%m-%d")
+        # ✨ Wider time window for better cloud-free chance
+        time_interval = (
+            (target_date - timedelta(days=45)).strftime("%Y-%m-%d"),
+            (target_date + timedelta(days=45)).strftime("%Y-%m-%d")
+        )
         
-        # If no valid image, try wider range
-        if not img_list or (len(img_list) > 0 and img_list[0].mean() < 1):
-            print("⚠️ No valid image found for the specified date, trying wider range...")
-            wider_range = (
-                target_date - timedelta(days=15),
-                target_date + timedelta(days=15)
-            )
-            request = create_request(wider_range)
-            img_list = request.get_data()
+        print(f"🔍 Searching: {time_interval[0]} to {time_interval[1]}")
         
-        if not img_list:
-            print("❌ No images found")
-            return None
+        # ✨ IMPROVED EVALSCRIPT with cloud filtering
+        evalscript = """
+        //VERSION=3
+        function setup() {
+          return {
+            input: ["B04", "B03", "B02", "SCL", "dataMask"],
+            output: { bands: 4 }
+          };
+        }
         
-        img = img_list[0]
-        if img.mean() < 1:
-            print("❌ Retrieved image is too dark or invalid")
-            return None
+        function evaluatePixel(sample) {
+          // SCL values: 3=cloud shadow, 8=cloud medium, 9=cloud high, 10=thin cirrus
+          if (sample.SCL == 3 || sample.SCL == 8 || sample.SCL == 9 || sample.SCL == 10) {
+            return [0, 0, 0, 0];  // Mask clouds
+          }
+          
+          // Apply gain
+          let gain = 2.5;
+          return [
+            Math.min(1, gain * sample.B04),
+            Math.min(1, gain * sample.B03),
+            Math.min(1, gain * sample.B02),
+            sample.dataMask
+          ];
+        }
+        """
         
-        # Save image
-        if output_path:
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            from PIL import Image
-            Image.fromarray(img.astype('uint8')).save(output_path)
+        # ✨ Request with strict cloud filtering
+        request = SentinelHubRequest(
+            evalscript=evalscript,
+            input_data=[
+                SentinelHubRequest.input_data(
+                    data_collection=DataCollection.SENTINEL2_L2A,
+                    time_interval=time_interval,
+                    maxcc=0.2,  # ✨ Only 20% cloud coverage max
+                    other_args={"dataFilter": {"mosaickingOrder": "leastCC"}}
+                )
+            ],
+            responses=[
+                SentinelHubRequest.output_response('default', MimeType.TIFF)
+            ],
+            bbox=bbox,
+            size=size,
+            config=config
+        )
         
-        return img
+        print("📡 Requesting data...")
         
-    except Exception as e:
-        print(f"\n❌ Error fetching image: {str(e)}")
-        return None
-
-
-def test_credentials():
-    """Test if credentials are valid"""
-    print("\n🔍 Testing Copernicus Credentials")
-    print("="*60)
-    
-    if not SH_CLIENT_ID or not SH_CLIENT_SECRET:
-        print("❌ No credentials found in .env")
-        print("\n📝 Create ml/.env file with:")
-        print("   SH_CLIENT_ID=your_client_id")
-        print("   SH_CLIENT_SECRET=your_client_secret")
-        return False
-    
-    print(f"✓ Client ID: {SH_CLIENT_ID[:10]}...{SH_CLIENT_ID[-4:]}")
-    print(f"✓ Client Secret: {SH_CLIENT_SECRET[:10]}...***")
-    
-    # Test authentication
-    try:
-        from sentinelhub import SentinelHubSession
-        config = get_copernicus_config()
-        session = SentinelHubSession(config=config)
-        token = session.token
+        try:
+            data = request.get_data()
+        except Exception as e:
+            print(f"❌ API Error: {str(e)}")
+            return None, None
         
-        if token:
-            print("✅ Authentication successful!")
-            print(f"✅ Token obtained (valid for ~1 hour)")
-            return True
-        else:
-            print("❌ Authentication failed - no token")
-            return False
+        if not data or len(data) == 0:
+            print("❌ No cloud-free data available")
+            print("   Try different dates or larger time window")
+            return None, None
+        
+        img = data[0]
+        
+        # Handle 4-channel image
+        if len(img.shape) == 3 and img.shape[2] == 4:
+            rgb = img[:, :, :3]
+            mask = img[:, :, 3]
             
+            valid_pixels_pct = (mask > 0).sum() / mask.size * 100
+            print(f"📊 Valid pixels: {valid_pixels_pct:.1f}%")
+            
+            if valid_pixels_pct < 50:
+                print("❌ Less than 50% valid pixels (too much cloud/no-data)")
+                return None, None
+            
+            if rgb.max() <= 1.0:
+                img_uint8 = (np.clip(rgb, 0, 1) * 255).astype(np.uint8)
+            else:
+                img_uint8 = np.clip(rgb, 0, 255).astype(np.uint8)
+        else:
+            if img.max() <= 1.0:
+                img_uint8 = (np.clip(img, 0, 1) * 255).astype(np.uint8)
+            else:
+                img_uint8 = np.clip(img, 0, 255).astype(np.uint8)
+        
+        # Validate
+        mean_val = img_uint8.mean()
+        var_val = np.var(img_uint8)
+        
+        print(f"📊 Mean: {mean_val:.2f}, Variance: {var_val:.2f}")
+        
+        if mean_val < 10 or mean_val > 240:
+            print("❌ Invalid brightness")
+            return None, None
+        
+        if var_val < 100:
+            print("❌ No variation (likely all cloud or corrupted)")
+            return None, None
+        
+        print("✅ Image validation passed")
+        
+        # Get actual date
+        actual_date = date
+        try:
+            timestamps = request.get_timestamps()
+            if timestamps:
+                actual_date = timestamps[0].strftime("%Y-%m-%d")
+                print(f"📅 Actual date: {actual_date}")
+        except:
+            pass
+        
+        # Enhance
+        if enhance:
+            print("🎨 Enhancing...")
+            try:
+                img_uint8 = enhance_for_change_detection(img_uint8)
+            except Exception as e:
+                print(f"⚠️  Enhancement skipped: {e}")
+        
+        # Save
+        if output_path:
+            from PIL import Image as PILImage
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            PILImage.fromarray(img_uint8).save(output_path)
+            print(f"💾 Saved: {output_path}")
+        
+        return img_uint8, actual_date
+        
     except Exception as e:
-        print(f"❌ Authentication failed: {e}")
-        return False
-
-
-if __name__ == "__main__":
-    print("🧪 Testing Sentinel Image Fetch\n")
-    
-    # First test credentials
-    if not test_credentials():
-        print("\n" + "="*60)
-        print("🔗 Get credentials from:")
-        print("   https://dataspace.copernicus.eu/")
-        print("   → Login/Register")
-        print("   → Go to: https://shapps.dataspace.copernicus.eu/dashboard/")
-        print("   → Settings → OAuth clients → Create new")
-        print("="*60)
-        exit(1)
-    
-    # Test fetch
-    print("\n" + "="*60)
-    print("Testing image fetch...")
-    print("="*60)
-    
-    test_aoi = [2.3, 48.85, 2.35, 48.87]  # Paris
-    test_date = "2023-07-15"
-    
-    result = fetch_sentinel_image(test_aoi, test_date, "test_paris.png")
-    
-    if result is not None:
-        print("\n✅ SUCCESS! Check test_paris.png")
-    else:
-        print("\n❌ Failed to fetch image")
+        print(f"❌ Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None, None

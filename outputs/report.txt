@@ -1,21 +1,16 @@
 📊 CHANGE DETECTION REPORT
 ------------------------------------------------------------
-📍 Location Analysis:
-   Coordinates: 19.1990°N to 19.2020°N
+📸 Dates:
+   Before: t0.png
+   After:  t1.png
 
-📅 Time Period:
-   T0 (Before): 2025-08-05
-   T1 (After):  2025-10-01
+📈 STATISTICS
+   Total pixels:     594,540
+   Changed pixels:   67,482
+   Change %:         11.35%
+   Detected regions: 1413
 
-📈 Change Statistics:
-   Changed Area:         0.10 km²
-   Change Percentage:    98.61%
-   Changed Regions:      2
+🎯 ASSESSMENT: 🟡 MODERATE CHANGE
+   New buildings, roads, or parking lots likely added.
 
-🎯 Assessment: 🔴 SIGNIFICANT CHANGE
-   Major changes detected. Indicates substantial urban development or transformation.
-
-💾 Outputs saved to: outputs/
-   • change_map.png - Visual comparison
-   • images/t0.png - Before image
-   • images/t1.png - After image
+💾 Visualization saved to: outputs/change_map.png
