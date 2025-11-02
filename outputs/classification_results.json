@@ -1,0 +1,29 @@
+{
+  "classification": "ILLEGAL CONSTRUCTION SUSPECTED",
+  "subcategory": "Urban Encroachment",
+  "confidence": 0.92,
+  "severity": "HIGH",
+  "reason": "Dense urban area (1146 buildings/km²) with 13.6% new construction detected",
+  "statistics": {
+    "change_percentage": 13.61,
+    "changed_pixels": 80917,
+    "total_pixels": 594540,
+    "area_km2": 58.418341297979914,
+    "building_count": 66950,
+    "building_density_per_km2": 1146.0
+  },
+  "date_range": {
+    "start": "2023-09-01",
+    "end": "2024-03-01"
+  },
+  "gee_validation": {
+    "total_buildings": 66950,
+    "building_density": 1146.0,
+    "area_km2": 58.418341297979914,
+    "change_percentage": 13.610017828909745,
+    "is_urban_area": true,
+    "is_dense_urban": true,
+    "likely_building_changes": true,
+    "avg_building_size": 171.66
+  }
+}

@@ -1,0 +1,16 @@
+============================================================
+URBAN CHANGE CLASSIFICATION REPORT
+============================================================
+
+Classification: NATURAL
+Category: Natural/Seasonal
+Confidence: 80%
+Reason: Natural changes in rural area
+Method: OpenStreetMap Overpass API (No Authentication Required)
+
+STATISTICS:
+----------------------------------------
+Changed Pixels: 8,619 (8.21%)
+Area: 10.46 km²
+Buildings: 1
+Density: 0.1 buildings/km²

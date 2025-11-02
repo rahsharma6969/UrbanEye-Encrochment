@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UrbanEye - Classification Results</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.3);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            font-size: 1.2em;
+            margin-bottom: 30px;
+        }
+        .test-selector {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        .test-btn {
+            padding: 12px 25px;
+            border: none;
+            background: #667eea;
+            color: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: all 0.3s;
+        }
+        .test-btn:hover {
+            background: #764ba2;
+            transform: translateY(-2px);
+        }
+        .test-btn.active {
+            background: #764ba2;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        .result-card {
+            border-radius: 12px;
+            padding: 30px;
+            margin: 20px 0;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        .man-made { background: linear-gradient(135deg, #ffe6e6 0%, #ffcccc 100%); border-left: 5px solid #ff4444; }
+        .natural { background: linear-gradient(135deg, #e6ffe6 0%, #ccffcc 100%); border-left: 5px solid #44ff44; }
+        .mixed { background: linear-gradient(135deg, #fff3e6 0%, #ffe6cc 100%); border-left: 5px solid #ff9944; }
+        .classification {
+            font-size: 2.2em;
+            font-weight: bold;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .badge {
+            background: rgba(0,0,0,0.1);
+            padding: 8px 20px;
+            border-radius: 25px;
+            font-size: 0.5em;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 25px 0;
+        }
+        .stat-box {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .stat-label {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 8px;
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #333;
+        }
+        .image-section {
+            margin-top: 30px;
+            text-align: center;
+        }
+        .image-section img {
+            max-width: 100%;
+            border-radius: 12px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+        }
+        .reason-box {
+            background: rgba(255,255,255,0.6);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 15px 0;
+            border-left: 4px solid #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🛰️ UrbanEye Classification System</h1>
+        <p class="subtitle">Natural vs Man-Made Change Detection</p>
+        
+        <div class="test-selector">
+            <button class="test-btn active" onclick="loadTest(1)">Test 1: Dense Urban</button>
+            <button class="test-btn" onclick="loadTest(2)">Test 2: Suburban</button>
+            <button class="test-btn" onclick="loadTest(3)">Test 3: Rural</button>
+        </div>
+        
+        <div id="results"></div>
+    </div>
+    
+    <script>
+        let currentTest = 1;
+        
+        function loadTest(testNum) {
+            currentTest = testNum;
+            
+            // Update button states
+            document.querySelectorAll('.test-btn').forEach((btn, i) => {
+                btn.classList.toggle('active', i + 1 === testNum);
+            });
+            
+            // Determine test folder name
+            const testNames = ['Dense_Urban_BKC', 'Suburban_Thane', 'Rural_Area'];
+            const testFolder = `test_${testNum}_${testNames[testNum-1]}`;
+            
+            // Load results
+            fetch(`${testFolder}/classification_results.json`)
+                .then(r => r.json())
+                .then(data => displayResults(data, testFolder))
+                .catch(err => {
+                    document.getElementById('results').innerHTML = 
+                        '<div style="text-align:center; padding:50px; color:#666;">Results not found. Run tests first.</div>';
+                });
+        }
+        
+        function displayResults(data, testFolder) {
+            const classType = data.classification.toLowerCase().replace('-', '');
+            
+            document.getElementById('results').innerHTML = `
+                <div class="result-card ${classType}">
+                    <div class="classification">
+                        <span>📊 ${data.classification}</span>
+                        <span class="badge">${data.confidence*100}% Confidence</span>
+                    </div>
+                    
+                    <div class="reason-box">
+                        <strong>📁 Category:</strong> ${data.subcategory}<br>
+                        <strong>💡 Reason:</strong> ${data.reason}
+                    </div>
+                    
+                    <div class="stats-grid">
+                        <div class="stat-box">
+                            <div class="stat-label">Changed Pixels</div>
+                            <div class="stat-value">${data.statistics.changed_pixels.toLocaleString()}</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-label">Change %</div>
+                            <div class="stat-value">${data.statistics.change_percentage}%</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-label">Buildings</div>
+                            <div class="stat-value">${data.statistics.building_count}</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-label">Density</div>
+                            <div class="stat-value">${data.statistics.building_density_per_km2}/km²</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-label">Area</div>
+                            <div class="stat-value">${data.statistics.area_km2} km²</div>
+                        </div>
+                    </div>
+                    
+                    <div class="image-section">
+                        <h3>Change Detection Visualization</h3>
+                        <img src="${testFolder}/change_map.png" alt="Change Map">
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Load first test on page load
+        loadTest(1);
+    </script>
+</body>
+</html>

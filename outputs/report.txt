@@ -6,9 +6,9 @@
 
 📈 STATISTICS
    Total pixels:     594,540
-   Changed pixels:   67,482
-   Change %:         11.35%
-   Detected regions: 1413
+   Changed pixels:   80,917
+   Change %:         13.61%
+   Detected regions: 1303
 
 🎯 ASSESSMENT: 🟡 MODERATE CHANGE
    New buildings, roads, or parking lots likely added.

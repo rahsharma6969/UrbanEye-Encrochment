@@ -1,0 +1,19 @@
+{
+  "classification": "NATURAL",
+  "subcategory": "Natural/Seasonal",
+  "confidence": 0.8,
+  "reason": "Natural changes in rural area",
+  "statistics": {
+    "total_pixels": 104951,
+    "changed_pixels": 8619,
+    "change_percentage": 8.21,
+    "area_km2": 10.46,
+    "building_count": 1,
+    "building_density_per_km2": 0.1
+  },
+  "date_range": {
+    "start": "2024-01-01",
+    "end": "2024-07-01"
+  },
+  "method": "OpenStreetMap Overpass API (No Authentication Required)"
+}

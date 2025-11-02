@@ -1,0 +1,16 @@
+📊 CHANGE DETECTION REPORT
+------------------------------------------------------------
+📸 Dates:
+   Before: t0.png
+   After:  t1.png
+
+📈 STATISTICS
+   Total pixels:     104,951
+   Changed pixels:   8,619
+   Change %:         8.21%
+   Detected regions: 244
+
+🎯 ASSESSMENT: 🟡 MODERATE CHANGE
+   New buildings, roads, or parking lots likely added.
+
+💾 Visualization saved to: outputs/change_map.png
