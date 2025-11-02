@@ -141,7 +141,7 @@ def validate_with_gee_buildings(change_mask, aoi_coords):
         from gee_building_service import GEEBuildingService
         
         # Initialize GEE
-        gee_service = GEEBuildingService(project_id='urbaneye-476904')
+        gee_service = GEEBuildingService(project_id='your project id')
         
         # Fetch building data for this area
         lat_min, lon_min, lat_max, lon_max = aoi_coords
