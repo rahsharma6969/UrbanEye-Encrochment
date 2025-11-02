@@ -12,7 +12,7 @@ import time
 class GEEBuildingService:
     """Service to fetch building footprints from Google Earth Engine"""
     
-    def __init__(self, project_id: str = 'urbaneye-476904'):  # ← Your working project ID
+    def __init__(self, project_id: str = 'gee project id'):  # ← Your working project ID
         """
         Initialize Earth Engine
         
