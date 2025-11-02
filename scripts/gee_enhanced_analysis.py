@@ -18,7 +18,7 @@ from datetime import datetime
 class GEEEnhancedAnalyzer:
     """Analyze detected changes using GEE historical imagery and building data"""
     
-    def __init__(self, project_id='urbaneye-476904'):
+    def __init__(self, project_id='your project id'):
         """Initialize with GEE authentication"""
         try:
             ee.Initialize(project=project_id)
