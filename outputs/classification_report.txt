@@ -2,24 +2,22 @@
 ENCROACHMENT CLASSIFICATION REPORT
 ======================================================================
 
-Classification: ILLEGAL CONSTRUCTION SUSPECTED
-Subcategory: Urban Encroachment
-Confidence: 92%
-Severity: HIGH
+Classification: SIGNIFICANT CHANGES
+Subcategory: Unknown Type
+Confidence: 75%
+Severity: MEDIUM
 
 Reason:
-Dense urban area (1146 buildings/km²) with 13.6% new construction detected
+Large changes detected (15.9%) - manual verification needed
 
 Statistics:
-  Change Percentage: 13.61%
-  Changed Pixels: 80,917
+  Change Percentage: 15.91%
+  Changed Pixels: 94,584
   Total Pixels: 594,540
-  Area: 58.42 km²
-  Buildings: 66,950
-  Building Density: 1146.0 per km²
+  Area: 58.21 km²
+  Buildings: 0
+  Building Density: 0.0 per km²
 
-Date Range: 2023-09-01 to 2024-03-01
+Date Range: 2018-01-01 to 2019-01-01
 
-GEE Building Validation: ✅ Available
-  Total Buildings Found: 66,950
-  Average Building Size: 172 m²
+GEE Building Validation: ❌ Not Available

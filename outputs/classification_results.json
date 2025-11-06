@@ -1,0 +1,20 @@
+{
+  "classification": "SIGNIFICANT CHANGES",
+  "subcategory": "Unknown Type",
+  "confidence": 0.75,
+  "severity": "MEDIUM",
+  "reason": "Large changes detected (15.9%) - manual verification needed",
+  "statistics": {
+    "change_percentage": 15.91,
+    "changed_pixels": 94584,
+    "total_pixels": 594540,
+    "area_km2": 58.21,
+    "building_count": 0,
+    "building_density_per_km2": 0
+  },
+  "date_range": {
+    "start": "2018-01-01",
+    "end": "2019-01-01"
+  },
+  "gee_validation": null
+}

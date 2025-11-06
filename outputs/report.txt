@@ -6,11 +6,11 @@
 
 📈 STATISTICS
    Total pixels:     594,540
-   Changed pixels:   80,917
-   Change %:         13.61%
-   Detected regions: 1303
+   Changed pixels:   94,584
+   Change %:         15.91%
+   Detected regions: 1683
 
-🎯 ASSESSMENT: 🟡 MODERATE CHANGE
-   New buildings, roads, or parking lots likely added.
+🎯 ASSESSMENT: 🔴 SIGNIFICANT URBAN EXPANSION
+   Major infrastructure growth — likely new housing or industrial zones.
 
 💾 Visualization saved to: outputs/change_map.png
